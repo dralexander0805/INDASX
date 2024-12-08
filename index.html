@@ -1,0 +1,227 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Falmouth Airspace</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+        .button-container {
+            position: absolute;
+            bottom: 70px;
+            left: 10px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+        .switch-button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            border: none;
+            margin-bottom: 5px;
+            cursor: pointer;
+        }
+        .switch-button:hover {
+            background-color: #45a049;
+        }
+        .popup-warning {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 1000;
+            max-width: 250px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="popup-warning">
+        <b>Warning:</b> This data is only accurate when loaded by the website manager.
+    </div>
+    <div class="button-container">
+        <button class="switch-button" onclick="loadGeoJSON('geojson1')">ZID HIGH</button>
+        <button class="switch-button" onclick="loadGeoJSON('geojson2')">ZID LOW</button>
+    </div>
+
+    <script>
+        var map = L.map('map').setView([38.545833, -84.358334], 7); // Center on the area of interest (Falmouth)
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        var currentGeoJSONLayers = [];
+        var colorUsed = [];
+
+        function getRandomColor() {
+            const colors = [
+                '#FF6347', '#FF4500', '#FF0000', '#FFD700', '#FF8C00', '#FF1493', '#DC143C', 
+                '#8A2BE2', '#6A5ACD', '#7FFF00', '#32CD32', '#00FA9A', '#1E90FF', '#00BFFF', 
+                '#4682B4', '#20B2AA', '#F08080', '#D2691E', '#8B0000', '#9ACD32'
+            ];
+            return colors[Math.floor(Math.random() * colors.length)];
+        }
+
+        // Haversine formula to calculate distance between two lat/lon points
+        function haversine(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the Earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const distance = R * c; // Distance in km
+            return distance;
+        }
+
+        // Create a custom plane icon (updated to use new image)
+        var planeIcon = L.icon({
+            iconUrl: 'https://pngimg.com/d/dot_PNG4.png', // New plane image
+            iconSize: [30, 30], // Size of the icon (adjust as needed)
+            iconAnchor: [5, 5], // Anchor point (where the icon is positioned relative to the marker)
+            popupAnchor: [0, -10] // Position of the popup relative to the icon
+        });
+
+        // Load VATSIM traffic near the map's center (Falmouth)
+        function loadVatsimTraffic() {
+            const mapCenterLat = 38.545833;
+            const mapCenterLon = -84.358334;
+            const maxDistance = 300; // Increased distance to show planes farther away (300 km)
+
+            fetch('https://data.vatsim.net/v3/vatsim-data.json')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.pilots) {
+                        data.pilots.forEach(pilot => {
+                            var lat = pilot.latitude;
+                            var lon = pilot.longitude;
+                            var callsign = pilot.callsign || "Unknown";
+                            var altitude = pilot.altitude || 0;
+
+                            // Calculate distance from the map center
+                            const distance = haversine(mapCenterLat, mapCenterLon, lat, lon);
+                            
+                            // Only plot planes within the specified radius
+                            if (distance <= maxDistance) {
+                                // Add markers with the custom plane icon
+                                var marker = L.marker([lat, lon], {
+                                    icon: planeIcon
+                                })
+                                .addTo(map)
+                                .bindPopup(`<b>Callsign:</b> ${callsign}<br>
+                                            <b>Altitude:</b> ${altitude} ft<br>`)
+                                .openPopup();
+                            }
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching VATSIM data:', error);
+                });
+        }
+
+        function loadGeoJSON(geojsonType) {
+            currentGeoJSONLayers.forEach(layer => map.removeLayer(layer));
+            currentGeoJSONLayers = [];
+            colorUsed = [];
+
+            fetch('01HZG45M765XBVHD8AKZHTB6BX.geojson')
+                .then(response => response.json())
+                .then(data => {
+                    var layer = L.geoJSON(data, {
+                        style: function (feature) {
+                            return {
+                                color: "green",
+                                weight: 2,
+                                fillColor: "lightgreen",
+                                fillOpacity: 0.5
+                            };
+                        },
+                        onEachFeature: function (feature, layer) {
+                            layer.bindPopup(
+                                `<b>Sector:</b> ${feature.properties.sec || feature.properties.Name}<br>
+                                <b>Frequency:</b> ${feature.properties.freq || 'N/A'}<br>
+                                <b>Controller:</b> ${feature.properties.cont || 'N/A'}<br>`
+                            );
+                        }
+                    }).addTo(map);
+                    currentGeoJSONLayers.push(layer);
+                    colorUsed.push("green");
+                })
+                .catch(error => {
+                    console.error('Error loading the always visible GeoJSON file:', error);
+                });
+
+            var geojsonFiles = [];
+            if (geojsonType === 'geojson1') {
+                geojsonFiles = ['01HZG6BBJETDYNHMTPZAKGS1BV.geojson', 'PIK+69.geojson', 'SHB+34.geojson'];
+            } else if (geojsonType === 'geojson2') {
+                geojsonFiles = ['01HZJ21RWS4HX137AJPEMSY4MD.geojson', '.geojson'];
+            }
+
+            var layerCount = 0;
+            geojsonFiles.forEach(file => {
+                fetch(file)
+                    .then(response => response.json())
+                    .then(data => {
+                        var color = 'blue';
+                        if (layerCount === 0) {
+                            color = 'red';
+                        } else if (layerCount === 1) {
+                            color = 'green';
+                        } else {
+                            color = getRandomColor();
+                        }
+                        if (colorUsed.includes(color)) {
+                            location.reload();
+                        } else {
+                            colorUsed.push(color);
+                        }
+                        var layer = L.geoJSON(data, {
+                            style: function (feature) {
+                                return {
+                                    color: color,
+                                    weight: 2,
+                                    fillColor: color,
+                                    fillOpacity: 0.5
+                                };
+                            },
+                            onEachFeature: function (feature, layer) {
+                                layer.bindPopup(
+                                    `<b>Sector:</b> ${feature.properties.sec || feature.properties.Name}<br>
+                                    <b>Frequency:</b> ${feature.properties.freq || 'N/A'}<br>
+                                    <b>Controller:</b> ${feature.properties.cont || 'N/A'}<br>`
+                                );
+                            }
+                        }).addTo(map);
+                        currentGeoJSONLayers.push(layer);
+                    })
+                    .catch(error => {
+                        console.error('Error loading the GeoJSON file:', error);
+                    });
+                layerCount++;
+            });
+        }
+
+        loadGeoJSON('geojson1');
+        loadVatsimTraffic(); // Call function to load VATSIM traffic
+    </script>
+</body>
+</html>
