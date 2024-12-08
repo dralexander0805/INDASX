@@ -103,7 +103,7 @@
         function loadVatsimTraffic() {
             const mapCenterLat = 38.545833;
             const mapCenterLon = -84.358334;
-            const maxDistance = 300; // Increased distance to show planes farther away (300 km)
+            const maxDistance = 500; // Increased distance to show planes farther away (300 km)
 
             fetch('https://data.vatsim.net/v3/vatsim-data.json')
                 .then(response => response.json())
